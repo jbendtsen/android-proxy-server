@@ -21,14 +21,25 @@
 	<Button
 		android:layout_width="wrap_content"
 		android:layout_height="wrap_content"
+		android:id="@+id/refreshBtn"
+		android:text="Refresh"
+	/>
+	<Button
+		android:layout_width="wrap_content"
+		android:layout_height="wrap_content"
 		android:id="@+id/fileBtn"
-		android:text="Start File Server"
+		android:text="Add File Server"
 	/>
 	<Button
 		android:layout_width="wrap_content"
 		android:layout_height="wrap_content"
 		android:id="@+id/proxyBtn"
-		android:text="Start Proxy"
+		android:text="Add Proxy"
+	/>
+	<ScrollView
+		android:layout_width="wrap_content"
+		android:layout_height="wrap_content"
+		android:id="@+id/mainScroll"
 	/>
 	<TextView
 		android:layout_width="wrap_content"

@@ -24,8 +24,7 @@ public class Utils {
 		return sb.toString();
 	}
 
-	public static ArrayList<String> getAllIpAddresses() {
-		ArrayList<String> output = new ArrayList<String>();
+	public static void getAllIpAddresses(ArrayList<String> output) {
 		try {
 			Enumeration<NetworkInterface> ifaces = NetworkInterface.getNetworkInterfaces();
 			while (ifaces.hasMoreElements()) {
@@ -40,7 +39,6 @@ public class Utils {
 		catch (Exception ex) {
 			output.add("Exception: " + ex.getClass().getSimpleName() + " " + ex.getMessage());
 		}
-		return output;
 	}
 
 	public static InetSocketAddress parseAddress(String addrStr) throws Exception {
