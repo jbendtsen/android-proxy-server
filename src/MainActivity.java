@@ -17,12 +17,11 @@ import android.widget.ScrollView;
 import android.widget.Spinner;
 import android.widget.TextView;
 import java.util.ArrayList;
-import java.util.concurrent.Future;
 
 public class MainActivity extends Activity implements View.OnClickListener, CompoundButton.OnCheckedChangeListener {
-	public Server fileServer;
-	public Server proxyServer;
 	public Handler taskRunner;
+	public Networking nw;
+
 	public StringDropDown addrList;
 	public ScrollView sv;
 
@@ -35,13 +34,12 @@ public class MainActivity extends Activity implements View.OnClickListener, Comp
 		((Button)findViewById(R.id.proxyBtn)).setOnClickListener(this);
 
 		this.sv = (ScrollView)findViewById(R.id.mainScroll);
+		this.addrList = new StringDropDown(this);
 
 		addProxy();
 
 		this.taskRunner = new Handler(this.getMainLooper());
-		this.fileServer = new FileServer(this);
-		this.proxyServer = new ProxyServer(this);
-		this.addrList = new StringDropDown(this);
+		this.nw = new Networking(this.taskRunner);
 	}
 
 	@Override
@@ -122,14 +120,6 @@ public class MainActivity extends Activity implements View.OnClickListener, Comp
 		return rect;
 	}
 
-	public String maybeCreateProxy(String incomingIp, String outgoingIp, String destIp, String destPort) {
-		// TODO: make a string key from the inputs, lookup combination in hashmap to see if its already created
-		// TODO: if so, return immediately with ""
-		// TODO: validate inputs and return error message if not valid
-		// TODO: if successful, create a new ProxyServer, start it and add it to the map
-		return "Not implement yet ;)";
-	}
-
 	public void showAddressAndPort(String addrStr, int port) {
 		((TextView)findViewById(R.id.addrView)).setText("Address: " + addrStr);
 		((TextView)findViewById(R.id.portView)).setText("Port: " + port);
@@ -153,45 +143,5 @@ public class MainActivity extends Activity implements View.OnClickListener, Comp
 		taskRunner.post(() -> {
 			((TextView)findViewById(R.id.mainTextView)).setText(msg);
 		});
-	}
-}
-
-class FileServer extends Server {
-	public FileServer(MainActivity ctx) {
-		super(ctx);
-	}
-
-	@Override
-	public ByteVector handleRequest(ByteVector input) {
-		String str = new String(input.buf, 0, input.size);
-		ctx.postMessage(str);
-		return new ByteVector();
-	}
-}
-
-class ProxyServer extends Server {
-	public final Client client;
-
-	public ProxyServer(MainActivity ctx) {
-		super(ctx);
-		client = new Client(ctx);
-	}
-
-	@Override
-	public void stop() {
-		super.stop();
-		client.stop();
-	}
-
-	@Override
-	public ByteVector handleRequest(ByteVector input) {
-		/*
-		Future<ByteVector> future = client.submitRequest(srcAddrPortStr, destAddrPortStr, input);
-		try {
-			return future.get();
-		}
-		catch (Exception ignored) {}
-		*/
-		return null;
 	}
 }
