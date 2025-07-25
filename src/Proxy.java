@@ -1,5 +1,6 @@
 package com.jackbendtsen.aserver;
 
+import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
 import java.nio.channels.*;
@@ -15,17 +16,17 @@ public class Proxy {
 	final InetSocketAddress incomingAddr;
 	final InetSocketAddress outgoingAddr;
 	final InetSocketAddress destAddr;
-	final AsynchronousSocketChannel client;
 	final ByteBuffer requestBuf;
 	final ByteBuffer responseBuf;
+	AsynchronousSocketChannel client;
 	Flow curFlow;
 
 	class Flow {
-		final IncomingAccept incomingAccept;
-		final IncomingRead incomingRead;
-		final OutgoingWrite outgoingWrite;
-		final OutgoingRead outgoingRead;
-		final IncomingWrite incomingWrite;
+		final IncomingAccept incomingAccept = new IncomingAccept();
+		final IncomingRead   incomingRead   = new IncomingRead();
+		final OutgoingWrite  outgoingWrite  = new OutgoingWrite();
+		final OutgoingRead   outgoingRead   = new OutgoingRead();
+		final IncomingWrite  incomingWrite  = new IncomingWrite();
 		AsynchronousSocketChannel conn;
 
 		class IncomingAccept implements CompletionHandler<AsynchronousSocketChannel, Void> {
@@ -98,12 +99,12 @@ public class Proxy {
 		this.incomingAddr = incomingAddr;
 		this.outgoingAddr = outgoingAddr;
 		this.destAddr = destAddr;
-		this.client = AsynchronousSocketChannel.open().bind(outgoingAddr);
 		this.requestBuf = ByteBuffer.allocate(16 * 1024);
 		this.responseBuf = ByteBuffer.allocate(16 * 1024);
 	}
 
-	public void acceptFirstServerRequest(AsynchronousServerSocketChannel server) {
+	public void acceptFirstServerRequest(AsynchronousServerSocketChannel server) throws IOException {
+		this.client = AsynchronousSocketChannel.open().bind(outgoingAddr);
 		curFlow = new Flow();
 		server.accept(null, curFlow.incomingAccept);
 	}

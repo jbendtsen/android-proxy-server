@@ -16,6 +16,7 @@ import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.Spinner;
 import android.widget.TextView;
+import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.nio.channels.AsynchronousServerSocketChannel;
 import java.util.ArrayList;
@@ -25,7 +26,7 @@ import java.util.concurrent.Future;
 public class MainActivity extends Activity implements View.OnClickListener, CompoundButton.OnCheckedChangeListener {
 	public ConcurrentHashMap<String, Proxy> proxyMap;
 	public Handler taskRunner;
-	public StringDropDown addrList;
+	public GenericDropDown<InterfaceIp> addrList;
 	public LinearLayout svPage;
 
 	@Override
@@ -38,7 +39,7 @@ public class MainActivity extends Activity implements View.OnClickListener, Comp
 		((Button)findViewById(R.id.proxyBtn)).setOnClickListener(this);
 
 		this.svPage = (LinearLayout)findViewById(R.id.mainScrollContent);
-		this.addrList = new StringDropDown(this);
+		this.addrList = new GenericDropDown<InterfaceIp>(this);
 
 		this.proxyMap = new ConcurrentHashMap<String, Proxy>();
 		this.taskRunner = new Handler(this.getMainLooper());
@@ -62,13 +63,22 @@ public class MainActivity extends Activity implements View.OnClickListener, Comp
 		*/
 
 		Spinner inSelectView  = (Spinner)row.findViewById(R.id.inSelect);
+		int inSelectIdx = inSelectView.getSelectedItemPosition();
+		if (inSelectIdx < 0)
+			return;
+
 		Spinner outSelectView = (Spinner)row.findViewById(R.id.outSelect);
+		int outSelectIdx = outSelectView.getSelectedItemPosition();
+		if (outSelectIdx < 0)
+			return;
+
+		InterfaceIp inIfIp = addrList.items.get(inSelectIdx);
+		InterfaceIp outIfIp = addrList.items.get(outSelectIdx);
+
 		EditText destIpView   = (EditText)row.findViewById(R.id.destIp);
 		EditText destPortView = (EditText)row.findViewById(R.id.destPort);
 
-		String inSelect = (String)inSelectView.getSelectedItem();
-		String outSelect = (String)outSelectView.getSelectedItem();
-		String errMsg = maybeCreateProxy(inSelect, outSelect, destIpView.getText().toString(), destPortView.getText().toString());
+		String errMsg = maybeCreateProxy(inIfIp, outIfIp, destIpView.getText().toString(), destPortView.getText().toString());
 
 		if (errMsg != null && !errMsg.isEmpty()) {
 			AlertDialog.Builder db = new AlertDialog.Builder(this)
@@ -124,19 +134,38 @@ public class MainActivity extends Activity implements View.OnClickListener, Comp
 		return rect;
 	}
 
-	public String maybeCreateProxy(String incomingIp, String outgoingIp, String destIp, String destPort) {
+	public String maybeCreateProxy(InterfaceIp inIfIp, InterfaceIp outIfIp, String destIp, String destPort) {
 		// TODO: make a string key from the inputs, lookup combination in hashmap to see if its already created
 		// TODO: if so, return immediately with ""
 		// TODO: validate inputs and return error message if not valid
 		// TODO: if successful, create a new ProxyServer, start it and add it to the map
-		String key = incomingIp + "_" + outgoingIp + "_" + destIp + "_" + destPort;
+		InetSocketAddress destAddr;
+		try {
+			destAddr = Utils.makeAddressFromIpPort(destIp, destPort);
+		}
+		catch (Exception ex) {
+			return Utils.getExceptionAsString(ex);
+		}
+
+		String key = inIfIp.toString() + "_" + outIfIp.toString() + "_" + destAddr.toString();
 		if (proxyMap.containsKey(key)) {
 			return "";
 		}
-		AsynchronousServerSocketChannel server = AsynchronousServerSocketChannel.open().bind(incomingAddr);
-		Proxy proxy = new Proxy(this, incomingAddr, outgoingAddr, destAddr);
-		proxy.acceptFirstServerRequest(server);
-		proxyMap.put(key, proxy);
+
+		InetSocketAddress incomingAddr = new InetSocketAddress(inIfIp.addr, 0);
+		InetSocketAddress outgoingAddr = new InetSocketAddress(outIfIp.addr, 0);
+
+		AsynchronousServerSocketChannel server;
+		try {
+			server = AsynchronousServerSocketChannel.open().bind(incomingAddr);
+			Proxy proxy = new Proxy(this, incomingAddr, outgoingAddr, destAddr);
+			proxy.acceptFirstServerRequest(server);
+			proxyMap.put(key, proxy);
+		}
+		catch (IOException ex) {
+			return Utils.getExceptionAsString(ex);
+		}
+
 		return "";
 	}
 

@@ -9,12 +9,12 @@ import android.widget.Spinner;
 import android.widget.SpinnerAdapter;
 import java.util.ArrayList;
 
-public class StringDropDown implements SpinnerAdapter {
+public class GenericDropDown<T> implements SpinnerAdapter {
 	public final Context ctx;
-	public ArrayList<String> items = new ArrayList<String>();
+	public ArrayList<T> items = new ArrayList<T>();
 	public ArrayList<DataSetObserver> observers = new ArrayList<DataSetObserver>();
 
-	public StringDropDown(Context context) {
+	public GenericDropDown(Context context) {
 		this.ctx = context;
 	}
 
@@ -46,12 +46,13 @@ public class StringDropDown implements SpinnerAdapter {
 
 	@Override
 	public View getView(int position, View convertView, ViewGroup parent) {
+		String text = items.get(position).toString();
 		if (convertView != null) {
-			((TextView)convertView).setText(items.get(position));
+			((TextView)convertView).setText(text);
 			return convertView;
 		}
 		TextView tv = new TextView(ctx);
-		tv.setText(items.get(position));
+		tv.setText(text);
 		return tv;
 	}
 

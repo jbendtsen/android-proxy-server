@@ -24,7 +24,7 @@ public class Utils {
 		return sb.toString();
 	}
 
-	public static void getAllIpAddresses(ArrayList<String> output) {
+	public static Exception getAllIpAddresses(ArrayList<InterfaceIp> output) {
 		try {
 			Enumeration<NetworkInterface> ifaces = NetworkInterface.getNetworkInterfaces();
 			while (ifaces.hasMoreElements()) {
@@ -32,28 +32,29 @@ public class Utils {
 				Enumeration<InetAddress> addrs = iface.getInetAddresses();
 				while (addrs.hasMoreElements()) {
 					InetAddress addr = addrs.nextElement();
-					output.add(iface.toString() + " | " + addr.toString());
+					output.add(new InterfaceIp(iface, addr));
 				}
 			}
 		}
 		catch (Exception ex) {
-			output.add("Exception: " + ex.getClass().getSimpleName() + " " + ex.getMessage());
+			return ex;
 		}
+		return null;
 	}
 
-	public static InetSocketAddress parseAddress(String addrStr) throws Exception {
-		int lastColon = addrStr.lastIndexOf(":");
-		int portNum = 0;
-		if (lastColon >= 0) {
-			try {
-				portNum = Integer.parseInt(addrStr.substring(lastColon + 1));
-			}
-			catch (Exception ignored) {}
-		}
-		if (portNum <= 0) {
-			throw new Exception("The address \"" + addrStr + "\" did not contain a port number");
-		}
-		return new InetSocketAddress(addrStr.substring(0, lastColon), portNum);
+	public static String getExceptionAsString(Throwable t) {
+		if (t == null)
+			return "";
+		String name = t.getClass().getSimpleName();
+		String msg = t.getMessage();
+		if (msg == null || msg.isEmpty())
+			msg = "No exception message provided";
+		return name + ": " + msg;
+	}
+
+	public static InetSocketAddress makeAddressFromIpPort(String ipStr, String portStr) throws Exception {
+		int portNum = Integer.parseInt(portStr);
+		return new InetSocketAddress(ipStr, portNum);
 	}
 }
 
