@@ -55,27 +55,5 @@ public class Utils {
 		}
 		return new InetSocketAddress(addrStr.substring(0, lastColon), portNum);
 	}
-
-	public static ByteVector sendAndAwaitResponse(InetSocketAddress srcAddr, InetSocketAddress destAddr, byte[] requestData) throws IOException {
-		Socket conn = new Socket();
-		try {
-			conn.bind(srcAddr);
-			conn.connect(destAddr);
-
-			if (requestData != null) {
-				OutputStream os = conn.getOutputStream();
-				os.write(requestData, 0, requestData.length);
-			}
-
-			InputStream is = conn.getInputStream();
-			ByteVector responseBv = new ByteVector();
-			responseBv.readAll(is);
-
-			return responseBv;
-		}
-		finally {
-			conn.close();
-		}
-	}
 }
 

@@ -17,12 +17,13 @@ import android.widget.ScrollView;
 import android.widget.Spinner;
 import android.widget.TextView;
 import java.net.InetSocketAddress;
+import java.nio.channels.AsynchronousServerSocketChannel;
 import java.util.ArrayList;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Future;
 
 public class MainActivity extends Activity implements View.OnClickListener, CompoundButton.OnCheckedChangeListener {
-	public ConcurrentHashMap<String, Server> servers;
+	public ConcurrentHashMap<String, Proxy> proxyMap;
 	public Handler taskRunner;
 	public StringDropDown addrList;
 	public LinearLayout svPage;
@@ -37,9 +38,10 @@ public class MainActivity extends Activity implements View.OnClickListener, Comp
 		((Button)findViewById(R.id.proxyBtn)).setOnClickListener(this);
 
 		this.svPage = (LinearLayout)findViewById(R.id.mainScrollContent);
-
-		this.taskRunner = new Handler(this.getMainLooper());
 		this.addrList = new StringDropDown(this);
+
+		this.proxyMap = new ConcurrentHashMap<String, Proxy>();
+		this.taskRunner = new Handler(this.getMainLooper());
 	}
 
 	@Override
@@ -69,12 +71,12 @@ public class MainActivity extends Activity implements View.OnClickListener, Comp
 		String errMsg = maybeCreateProxy(inSelect, outSelect, destIpView.getText().toString(), destPortView.getText().toString());
 
 		if (errMsg != null && !errMsg.isEmpty()) {
-			postDialogBuilder(new AlertDialog.Builder(this)
+			AlertDialog.Builder db = new AlertDialog.Builder(this)
 				.setTitle("Failed to create proxy server")
 				.setMessage(errMsg)
 				.setPositiveButton(android.R.string.ok, null)
-				.setIconAttribute(android.R.attr.alertDialogIcon)
-			);
+				.setIconAttribute(android.R.attr.alertDialogIcon);
+			enqueueTaskToMainThread(() -> { db.show(); });
 		}
 	}
 
@@ -128,10 +130,14 @@ public class MainActivity extends Activity implements View.OnClickListener, Comp
 		// TODO: validate inputs and return error message if not valid
 		// TODO: if successful, create a new ProxyServer, start it and add it to the map
 		String key = incomingIp + "_" + outgoingIp + "_" + destIp + "_" + destPort;
-		if (servers.containsKey(key)) {
+		if (proxyMap.containsKey(key)) {
 			return "";
 		}
-		return "Not implemented yet ;)";
+		AsynchronousServerSocketChannel server = AsynchronousServerSocketChannel.open().bind(incomingAddr);
+		Proxy proxy = new Proxy(this, incomingAddr, outgoingAddr, destAddr);
+		proxy.acceptFirstServerRequest(server);
+		proxyMap.put(key, proxy);
+		return "";
 	}
 
 	public void showAddressAndPort(String addrStr, int port) {
@@ -139,61 +145,15 @@ public class MainActivity extends Activity implements View.OnClickListener, Comp
 		((TextView)findViewById(R.id.portView)).setText("Port: " + port);
 	}
 
-	public void onServerSetupFailure(Exception ex) {
+	public void onServerSetupFailure(Throwable ex) {
 		((TextView)findViewById(R.id.mainTextView)).setText("Setup exception: " + ex.toString());
 	}
 
-	public void onServerConnectionFailure(Exception ex) {
+	public void onServerConnectionFailure(Throwable ex) {
 		((TextView)findViewById(R.id.mainTextView)).setText("Connection exception: " + ex.toString());
 	}
 
-	public void postDialogBuilder(AlertDialog.Builder db) {
-		taskRunner.post(() -> {
-			db.show();
-		});
-	}
-
-	public void postMessage(String msg) {
-		taskRunner.post(() -> {
-			((TextView)findViewById(R.id.mainTextView)).setText(msg);
-		});
-	}
-}
-
-class FileServer extends Server {
-	public FileServer(MainActivity ctx, InetSocketAddress bindAddr) {
-		super(ctx, bindAddr);
-	}
-
-	@Override
-	public ByteVector handleRequest(ByteVector input) {
-		String str = new String(input.buf, 0, input.size);
-		ctx.postMessage(str);
-		return new ByteVector();
-	}
-}
-
-class ProxyServer extends Server {
-	public final Client client;
-
-	public ProxyServer(MainActivity ctx, InetSocketAddress incomingAddr, InetSocketAddress outgoingAddr, InetSocketAddress destAddr) {
-		super(ctx, incomingAddr);
-		client = new Client(ctx, outgoingAddr, destAddr);
-	}
-
-	@Override
-	public void stop() {
-		super.stop();
-		client.stop();
-	}
-
-	@Override
-	public ByteVector handleRequest(ByteVector input) {
-		Future<ByteVector> future = client.submitRequest(input);
-		try {
-			return future.get();
-		}
-		catch (Exception ignored) {}
-		return null;
+	public void enqueueTaskToMainThread(Runnable runnable) {
+		taskRunner.post(runnable);
 	}
 }
