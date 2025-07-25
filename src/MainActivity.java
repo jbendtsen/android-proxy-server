@@ -16,31 +16,29 @@ import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.Spinner;
 import android.widget.TextView;
+import java.net.InetSocketAddress;
 import java.util.ArrayList;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Future;
 
 public class MainActivity extends Activity implements View.OnClickListener, CompoundButton.OnCheckedChangeListener {
-	public Server fileServer;
-	public Server proxyServer;
+	public ConcurrentHashMap<String, Server> servers;
 	public Handler taskRunner;
 	public StringDropDown addrList;
-	public ScrollView sv;
+	public LinearLayout svPage;
 
 	@Override
 	protected void onCreate(Bundle savedInstanceState) {
 		super.onCreate(savedInstanceState);
 		setContentView(R.layout.activity_main);
 
+		((Button)findViewById(R.id.refreshBtn)).setOnClickListener(this);
 		((Button)findViewById(R.id.fileBtn)).setOnClickListener(this);
 		((Button)findViewById(R.id.proxyBtn)).setOnClickListener(this);
 
-		this.sv = (ScrollView)findViewById(R.id.mainScroll);
-
-		addProxy();
+		this.svPage = (LinearLayout)findViewById(R.id.mainScrollContent);
 
 		this.taskRunner = new Handler(this.getMainLooper());
-		this.fileServer = new FileServer(this);
-		this.proxyServer = new ProxyServer(this);
 		this.addrList = new StringDropDown(this);
 	}
 
@@ -48,6 +46,8 @@ public class MainActivity extends Activity implements View.OnClickListener, Comp
 	public void onStart() {
 		super.onStart();
 		refreshInterfaces();
+		if (this.svPage.getChildCount() == 0)
+			addProxy();
 	}
 
 	@Override
@@ -110,15 +110,15 @@ public class MainActivity extends Activity implements View.OnClickListener, Comp
 		cb.setOnCheckedChangeListener(this);
 		Spinner incomingSpinner = (Spinner)proxyUi.findViewById(R.id.inSelect);
 		incomingSpinner.setAdapter(this.addrList);
-		Spinner outgoingSpinner = (Spinner)proxyUi.findViewById(R.id.inSelect);
+		Spinner outgoingSpinner = (Spinner)proxyUi.findViewById(R.id.outSelect);
 		outgoingSpinner.setAdapter(this.addrList);
-		this.sv.addView(proxyUi);
+		this.svPage.addView(proxyUi);
 	}
 
 	public Rect getRowRect(ViewGroup row) {
 		Rect rect = new Rect();
 		row.getDrawingRect(rect);
-		this.sv.offsetDescendantRectToMyCoords(row, rect);
+		this.svPage.offsetDescendantRectToMyCoords(row, rect);
 		return rect;
 	}
 
@@ -127,7 +127,11 @@ public class MainActivity extends Activity implements View.OnClickListener, Comp
 		// TODO: if so, return immediately with ""
 		// TODO: validate inputs and return error message if not valid
 		// TODO: if successful, create a new ProxyServer, start it and add it to the map
-		return "Not implement yet ;)";
+		String key = incomingIp + "_" + outgoingIp + "_" + destIp + "_" + destPort;
+		if (servers.containsKey(key)) {
+			return "";
+		}
+		return "Not implemented yet ;)";
 	}
 
 	public void showAddressAndPort(String addrStr, int port) {
@@ -157,8 +161,8 @@ public class MainActivity extends Activity implements View.OnClickListener, Comp
 }
 
 class FileServer extends Server {
-	public FileServer(MainActivity ctx) {
-		super(ctx);
+	public FileServer(MainActivity ctx, InetSocketAddress bindAddr) {
+		super(ctx, bindAddr);
 	}
 
 	@Override
@@ -172,9 +176,9 @@ class FileServer extends Server {
 class ProxyServer extends Server {
 	public final Client client;
 
-	public ProxyServer(MainActivity ctx) {
-		super(ctx);
-		client = new Client(ctx);
+	public ProxyServer(MainActivity ctx, InetSocketAddress incomingAddr, InetSocketAddress outgoingAddr, InetSocketAddress destAddr) {
+		super(ctx, incomingAddr);
+		client = new Client(ctx, outgoingAddr, destAddr);
 	}
 
 	@Override
@@ -185,13 +189,11 @@ class ProxyServer extends Server {
 
 	@Override
 	public ByteVector handleRequest(ByteVector input) {
-		/*
-		Future<ByteVector> future = client.submitRequest(srcAddrPortStr, destAddrPortStr, input);
+		Future<ByteVector> future = client.submitRequest(input);
 		try {
 			return future.get();
 		}
 		catch (Exception ignored) {}
-		*/
 		return null;
 	}
 }

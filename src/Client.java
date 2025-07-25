@@ -10,14 +10,12 @@ import java.util.concurrent.*;
 
 public class Client implements Runnable {
 	public static class ClientRequest {
-		public final String srcAddrPortStr;
-		public final String destAddrPortStr;
+		public final String cmd;
 		public final byte[] requestData;
 		public final CompletableFuture<ByteVector> future;
 
-		public ClientRequest(String srcAddr, String destAddr, byte[] requestData, CompletableFuture<ByteVector> future) {
-			this.srcAddrPortStr = srcAddr;
-			this.destAddrPortStr = destAddr;
+		public ClientRequest(String cmd, byte[] requestData, CompletableFuture<ByteVector> future) {
+			this.cmd = cmd;
 			this.requestData = requestData;
 			this.future = future;
 		}
@@ -25,11 +23,15 @@ public class Client implements Runnable {
 
 	public final MainActivity ctx;
 	public final LinkedBlockingQueue<ClientRequest> queue;
+	public final InetSocketAddress srcAddr;
+	public final InetSocketAddress destAddr;
 	public Thread thread;
 
-	public Client(MainActivity ctx) {
+	public Client(MainActivity ctx, InetSocketAddress bindAddr, InetSocketAddress destAddr) {
 		this.ctx = ctx;
 		this.queue = new LinkedBlockingQueue<>();
+		this.srcAddr = bindAddr;
+		this.destAddr = destAddr;
 		this.thread = null;
 	}
 
@@ -41,17 +43,17 @@ public class Client implements Runnable {
 	}
 
 	public void stop() {
-		queue.add(new ClientRequest("close", null, null, null));
+		queue.add(new ClientRequest("close", null, null));
 	}
 
-	public Future<ByteVector> submitRequest(String srcAddrPortStr, String destAddrPortStr, ByteVector requestData) {
+	public Future<ByteVector> submitRequest(ByteVector requestData) {
 		start();
 		byte[] data = null;
 		if (requestData.buf != null && requestData.size > 0)
 			data = Arrays.copyOf(requestData.buf, requestData.size);
 
 		CompletableFuture<ByteVector> future = new CompletableFuture<>();
-		ClientRequest request = new ClientRequest(srcAddrPortStr, destAddrPortStr, data, future);
+		ClientRequest request = new ClientRequest("", data, future);
 		queue.add(request);
 		return future;
 	}
@@ -69,18 +71,8 @@ public class Client implements Runnable {
 				break;
 			}
 
-			if ("close".equals(request.srcAddrPortStr))
+			if ("close".equals(request.cmd))
 				break;
-
-			InetSocketAddress srcAddr, destAddr;
-			try {
-				srcAddr = Utils.parseAddress(request.srcAddrPortStr);
-				destAddr = Utils.parseAddress(request.destAddrPortStr);
-			}
-			catch (Exception ex) {
-				ctx.postMessage(ex.getMessage());
-				break;
-			}
 
 			ByteVector responseBv = null;
 			try {

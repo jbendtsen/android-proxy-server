@@ -4,16 +4,19 @@ import android.os.Handler;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.net.InetSocketAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
 
 public abstract class Server implements Runnable {
 	public final MainActivity ctx;
+	public final InetSocketAddress addr;
 	public Thread thread;
 	public ServerSocket curServer;
 
-	public Server(MainActivity ctx) {
+	public Server(MainActivity ctx, InetSocketAddress bindAddr) {
 		this.ctx = ctx;
+		this.addr = bindAddr;
 		this.thread = null;
 		this.curServer = null;
 	}
@@ -42,7 +45,7 @@ public abstract class Server implements Runnable {
 		curServer = null;
 		ServerSocket server = null;
 		try {
-			server = new ServerSocket(0);
+			server = new ServerSocket(addr.getPort(), 50, addr.getAddress());
 			curServer = server;
 			String addrStr = server.getLocalSocketAddress().toString();
 			int port = server.getLocalPort();

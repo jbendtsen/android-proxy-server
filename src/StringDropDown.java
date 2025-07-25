@@ -84,4 +84,8 @@ public class StringDropDown implements SpinnerAdapter {
 	public void unregisterDataSetObserver(DataSetObserver observer) {
 		observers.remove(observer);
 	}
+
+	public CharSequence[] getAutofillOptions() {
+		return null;
+	}
 }

@@ -2,83 +2,69 @@
 <LinearLayout
 	xmlns:android="http://schemas.android.com/apk/res/android"
 	xmlns:app="http://schemas.android.com/apk/res-auto"
-    xmlns:tools="http://schemas.android.com/tools"
-    android:layout_width="wrap_content"
-    android:layout_height="wrap_content"
-    android:gravity="center">
+	xmlns:tools="http://schemas.android.com/tools"
+	android:layout_width="wrap_content"
+	android:layout_height="wrap_content"
+	android:orientation="vertical"
+>
+	<View
+		android:layout_width="match_parent"
+		android:layout_height="1dp"
+		android:background="#808080"
+	/>
 
 	<CheckBox
 		android:layout_width="wrap_content"
 		android:layout_height="wrap_content"
 		android:id="@+id/proxyEnabled"
+		android:text="Enabled"
 	/>
 
-	<LinearLayout
-		android:layout_width="wrap_content"
+	<TableLayout
+		android:layout_width="match_parent"
 		android:layout_height="wrap_content"
-		android:orientation="vertical"
-		android:gravity="center"
+		android:layout_marginStart="16dp"
+		android:layout_marginEnd="16dp"
+		android:stretchColumns="1"
+		android:shrinkColumns="1"
 	>
-		<TextView
-			android:layout_width="wrap_content"
-			android:layout_height="wrap_content"
-			android:text="Incoming IP:port"
-		/>
-		<Spinner
-			android:layout_width="wrap_content"
-			android:layout_height="wrap_content"
-			android:id="@+id/inSelect"
-		/>
-		<TextView
-			android:layout_width="wrap_content"
-			android:layout_height="wrap_content"
-			android:id="@+id/inPort"
-		/>
-	</LinearLayout>
-
-    <LinearLayout
-		android:layout_width="wrap_content"
-		android:layout_height="wrap_content"
-		android:orientation="vertical"
-		android:gravity="center"
-	>
-		<TextView
-			android:layout_width="wrap_content"
-			android:layout_height="wrap_content"
-			android:text="Outgoing IP:port"
-		/>
-		<Spinner
-			android:layout_width="wrap_content"
-			android:layout_height="wrap_content"
-			android:id="@+id/outSelect"
-		/>
-		<TextView
-			android:layout_width="wrap_content"
-			android:layout_height="wrap_content"
-			android:id="@+id/outPort"
-		/>
-	</LinearLayout>
-
-    <LinearLayout
-		android:layout_width="wrap_content"
-		android:layout_height="wrap_content"
-		android:orientation="vertical"
-		android:gravity="center"
-	>
-		<TextView
-			android:layout_width="wrap_content"
-			android:layout_height="wrap_content"
-			android:text="Dest IP:port"
-		/>
-		<EditText
-			android:layout_width="wrap_content"
-			android:layout_height="wrap_content"
-			android:id="@+id/destIp"
-		/>
-		<EditText
-			android:layout_width="wrap_content"
-			android:layout_height="wrap_content"
-			android:id="@+id/destPort"
-		/>
-	</LinearLayout>
+		<TableRow>
+			<TextView
+				android:text="Incoming IP:port"
+			/>
+			<Spinner
+				android:layout_column="1"
+				android:id="@+id/inSelect"
+			/>
+			<TextView
+				android:id="@+id/inPort"
+				android:minWidth="64dp"
+			/>
+		</TableRow>
+		<TableRow>
+			<TextView
+				android:text="Outgoing IP:port"
+			/>
+			<Spinner
+				android:layout_column="1"
+				android:id="@+id/outSelect"
+			/>
+			<TextView
+				android:id="@+id/outPort"
+				android:minWidth="64dp"
+			/>
+		</TableRow>
+		<TableRow>
+			<TextView
+				android:text="Dest IP:port"
+			/>
+			<EditText
+				android:id="@+id/destIp"
+			/>
+			<EditText
+				android:id="@+id/destPort"
+				android:minWidth="64dp"
+			/>
+		</TableRow>
+	</TableLayout>
 </LinearLayout>
