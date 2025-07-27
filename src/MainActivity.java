@@ -67,26 +67,44 @@ public class MainActivity extends Activity implements View.OnClickListener, Comp
 		if (inSelectIdx < 0)
 			return;
 
-		Spinner outSelectView = (Spinner)row.findViewById(R.id.outSelect);
+		Spinner outSelectView  = (Spinner)row.findViewById(R.id.outSelect);
 		int outSelectIdx = outSelectView.getSelectedItemPosition();
 		if (outSelectIdx < 0)
+			return;
+
+		EditText destIpView   = (EditText)row.findViewById(R.id.destIp);
+		EditText destPortView = (EditText)row.findViewById(R.id.destPort);
+
+		String destIp = destIpView.getText().toString();
+		String destPort = destPortView.getText().toString();
+		if (destIp == "" || destPort == "")
 			return;
 
 		InterfaceIp inIfIp = addrList.items.get(inSelectIdx);
 		InterfaceIp outIfIp = addrList.items.get(outSelectIdx);
 
-		EditText destIpView   = (EditText)row.findViewById(R.id.destIp);
-		EditText destPortView = (EditText)row.findViewById(R.id.destPort);
+		TextView inPortView = (TextView)row.findViewById(R.id.inPort);
+		TextView outPortView = (TextView)row.findViewById(R.id.outPort);
 
-		String errMsg = maybeCreateProxy(inIfIp, outIfIp, destIpView.getText().toString(), destPortView.getText().toString());
+		if (isChecked) {
+			String errMsg = maybeCreateProxy(inIfIp, outIfIp, destIp, destPort, inPortView, outPortView);
 
-		if (errMsg != null && !errMsg.isEmpty()) {
-			AlertDialog.Builder db = new AlertDialog.Builder(this)
-				.setTitle("Failed to create proxy server")
-				.setMessage(errMsg)
-				.setPositiveButton(android.R.string.ok, null)
-				.setIconAttribute(android.R.attr.alertDialogIcon);
-			enqueueTaskToMainThread(() -> { db.show(); });
+			if (errMsg != null && !errMsg.isEmpty()) {
+				AlertDialog.Builder db = new AlertDialog.Builder(this)
+					.setTitle("Failed to create proxy server")
+					.setMessage(errMsg)
+					.setPositiveButton(android.R.string.ok, null)
+					.setIconAttribute(android.R.attr.alertDialogIcon);
+				enqueueTaskToMainThread(() -> { db.show(); });
+			}
+		}
+		else {
+			try {
+				InetSocketAddress destAddr = Utils.makeAddressFromIpPort(destIp, destPort);
+				String key = makeProxyMapKey(inIfIp, outIfIp, destAddr);
+				proxyMap.remove(key);
+			}
+			catch (Exception ignored) {}
 		}
 	}
 
@@ -134,11 +152,18 @@ public class MainActivity extends Activity implements View.OnClickListener, Comp
 		return rect;
 	}
 
-	public String maybeCreateProxy(InterfaceIp inIfIp, InterfaceIp outIfIp, String destIp, String destPort) {
-		// TODO: make a string key from the inputs, lookup combination in hashmap to see if its already created
-		// TODO: if so, return immediately with ""
-		// TODO: validate inputs and return error message if not valid
-		// TODO: if successful, create a new ProxyServer, start it and add it to the map
+	public static String makeProxyMapKey(InterfaceIp inIfIp, InterfaceIp outIfIp, InetSocketAddress destAddr) {
+		return inIfIp.toString() + "_" + outIfIp.toString() + "_" + destAddr.toString();
+	}
+
+	public String maybeCreateProxy(
+		InterfaceIp inIfIp,
+		InterfaceIp outIfIp,
+		String destIp,
+		String destPort,
+		TextView inPortView,
+		TextView outPortView
+	) {
 		InetSocketAddress destAddr;
 		try {
 			destAddr = Utils.makeAddressFromIpPort(destIp, destPort);
@@ -147,10 +172,9 @@ public class MainActivity extends Activity implements View.OnClickListener, Comp
 			return Utils.getExceptionAsString(ex);
 		}
 
-		String key = inIfIp.toString() + "_" + outIfIp.toString() + "_" + destAddr.toString();
-		if (proxyMap.containsKey(key)) {
+		String key = makeProxyMapKey(inIfIp, outIfIp, destAddr);
+		if (proxyMap.containsKey(key))
 			return "";
-		}
 
 		InetSocketAddress incomingAddr = new InetSocketAddress(inIfIp.addr, 0);
 		InetSocketAddress outgoingAddr = new InetSocketAddress(outIfIp.addr, 0);
@@ -159,8 +183,10 @@ public class MainActivity extends Activity implements View.OnClickListener, Comp
 		try {
 			server = AsynchronousServerSocketChannel.open().bind(incomingAddr);
 			Proxy proxy = new Proxy(this, incomingAddr, outgoingAddr, destAddr);
-			proxy.acceptFirstServerRequest(server);
+			int[] serverClientPorts = proxy.acceptFirstServerRequest(server);
 			proxyMap.put(key, proxy);
+			inPortView.setText("" + serverClientPorts[0]);
+			outPortView.setText("" + serverClientPorts[1]);
 		}
 		catch (IOException ex) {
 			return Utils.getExceptionAsString(ex);

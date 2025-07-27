@@ -103,9 +103,13 @@ public class Proxy {
 		this.responseBuf = ByteBuffer.allocate(16 * 1024);
 	}
 
-	public void acceptFirstServerRequest(AsynchronousServerSocketChannel server) throws IOException {
+	public int[] acceptFirstServerRequest(AsynchronousServerSocketChannel server) throws IOException {
 		this.client = AsynchronousSocketChannel.open().bind(outgoingAddr);
 		curFlow = new Flow();
 		server.accept(null, curFlow.incomingAccept);
+		return new int[] {
+			((InetSocketAddress)server.getLocalAddress()).getPort(),
+			((InetSocketAddress)client.getLocalAddress()).getPort(),
+		};
 	}
 }
