@@ -62,6 +62,8 @@ public class MainActivity extends Activity implements View.OnClickListener, Comp
 		int index = rowRect.top / height;
 		*/
 
+		((TextView)findViewById(R.id.mainTextView)).setText("");
+
 		Spinner inSelectView  = (Spinner)row.findViewById(R.id.inSelect);
 		int inSelectIdx = inSelectView.getSelectedItemPosition();
 		if (inSelectIdx < 0)
@@ -184,11 +186,11 @@ public class MainActivity extends Activity implements View.OnClickListener, Comp
 		AsynchronousServerSocketChannel server;
 		try {
 			server = AsynchronousServerSocketChannel.open().bind(incomingAddr);
-			Proxy proxy = new Proxy(this, incomingAddr, outgoingAddr, destAddr);
-			int[] serverClientPorts = proxy.acceptFirstServerRequest(server);
+			Proxy proxy = new Proxy(this, incomingAddr, outgoingAddr, destAddr, server);
 			proxyMap.put(key, proxy);
-			inPortView.setText("" + serverClientPorts[0]);
-			outPortView.setText("" + serverClientPorts[1]);
+			int serverPort = proxy.acceptFirstServerRequest();
+			inPortView.setText("" + serverPort);
+			//outPortView.setText("" + clientPort);
 		}
 		catch (IOException ex) {
 			return Utils.getExceptionAsString(ex);
@@ -197,9 +199,9 @@ public class MainActivity extends Activity implements View.OnClickListener, Comp
 		return "";
 	}
 
-	public void showAddressAndPort(String addrStr, int port) {
-		((TextView)findViewById(R.id.addrView)).setText("Address: " + addrStr);
-		((TextView)findViewById(R.id.portView)).setText("Port: " + port);
+	public void showTwoStrings(String str1, String str2) {
+		((TextView)findViewById(R.id.addrView)).setText(str1);
+		((TextView)findViewById(R.id.portView)).setText(str2);
 	}
 
 	public void onServerSetupFailure(Throwable ex, String kind) {
