@@ -20,11 +20,11 @@ import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.nio.channels.AsynchronousServerSocketChannel;
 import java.util.ArrayList;
-import java.util.concurrent.ConcurrentHashMap;
+import java.util.HashMap;
 import java.util.concurrent.Future;
 
 public class MainActivity extends Activity implements View.OnClickListener, CompoundButton.OnCheckedChangeListener {
-	public ConcurrentHashMap<String, Proxy> proxyMap;
+	public HashMap<String, Proxy> proxyMap;
 	public Handler taskRunner;
 	public GenericDropDown<InterfaceIp> addrList;
 	public LinearLayout svPage;
@@ -41,7 +41,7 @@ public class MainActivity extends Activity implements View.OnClickListener, Comp
 		this.svPage = (LinearLayout)findViewById(R.id.mainScrollContent);
 		this.addrList = new GenericDropDown<InterfaceIp>(this);
 
-		this.proxyMap = new ConcurrentHashMap<String, Proxy>();
+		this.proxyMap = new HashMap<String, Proxy>();
 		this.taskRunner = new Handler(this.getMainLooper());
 	}
 
@@ -102,7 +102,9 @@ public class MainActivity extends Activity implements View.OnClickListener, Comp
 			try {
 				InetSocketAddress destAddr = Utils.makeAddressFromIpPort(destIp, destPort);
 				String key = makeProxyMapKey(inIfIp, outIfIp, destAddr);
-				proxyMap.remove(key);
+				Proxy toRemove = proxyMap.remove(key);
+				if (toRemove != null)
+					toRemove.close();
 			}
 			catch (Exception ignored) {}
 		}
@@ -200,12 +202,12 @@ public class MainActivity extends Activity implements View.OnClickListener, Comp
 		((TextView)findViewById(R.id.portView)).setText("Port: " + port);
 	}
 
-	public void onServerSetupFailure(Throwable ex) {
-		((TextView)findViewById(R.id.mainTextView)).setText("Setup exception: " + ex.toString());
+	public void onServerSetupFailure(Throwable ex, String kind) {
+		((TextView)findViewById(R.id.mainTextView)).setText("Setup exception from " + kind + ": " + ex.toString());
 	}
 
-	public void onServerConnectionFailure(Throwable ex) {
-		((TextView)findViewById(R.id.mainTextView)).setText("Connection exception: " + ex.toString());
+	public void onServerConnectionFailure(Throwable ex, String kind) {
+		((TextView)findViewById(R.id.mainTextView)).setText("Connection exception from " + kind + ": " + ex.toString());
 	}
 
 	public void enqueueTaskToMainThread(Runnable runnable) {

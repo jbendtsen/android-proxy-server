@@ -4,6 +4,8 @@ import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
 import java.nio.channels.*;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.ExecutionException;
 
 // TODO: Maybe dispatch inside some completion handlers to avoid stack overflow?
 // TODO: Properly handle failure, disconnection
@@ -18,77 +20,114 @@ public class Proxy {
 	final InetSocketAddress destAddr;
 	final ByteBuffer requestBuf;
 	final ByteBuffer responseBuf;
-	AsynchronousSocketChannel client;
+	final AtomicBoolean isConnected;
+	AsynchronousServerSocketChannel curServer;
+	AsynchronousSocketChannel curClient;
 	Flow curFlow;
 
 	class Flow {
-		final IncomingAccept incomingAccept = new IncomingAccept();
-		final IncomingRead   incomingRead   = new IncomingRead();
-		final OutgoingWrite  outgoingWrite  = new OutgoingWrite();
-		final OutgoingRead   outgoingRead   = new OutgoingRead();
-		final IncomingWrite  incomingWrite  = new IncomingWrite();
-		AsynchronousSocketChannel conn;
+		final IncomingAccept  incomingAccept  = new IncomingAccept();
+		final OutgoingConnect outgoingConnect = new OutgoingConnect();
+		final IncomingRead    incomingRead    = new IncomingRead();
+		final OutgoingWrite   outgoingWrite   = new OutgoingWrite();
+		final OutgoingRead    outgoingRead    = new OutgoingRead();
+		final IncomingWrite   incomingWrite   = new IncomingWrite();
 
 		class IncomingAccept implements CompletionHandler<AsynchronousSocketChannel, Void> {
 			public void completed(AsynchronousSocketChannel conn, Void attachment) {
-				requestBuf.position(0);
-				conn.read(requestBuf, null, incomingRead);
-			}
-			public void failed(Throwable ex, Void attachment) {
-				mainCtx.enqueueTaskToMainThread(() -> {
-					mainCtx.onServerSetupFailure(ex);
-				});
-			}
-		}
-
-		class IncomingRead implements CompletionHandler<Integer, Void> {
-			public void completed(Integer bytesRead, Void attachment) {
-				if (bytesRead > 0) {
+				if (!isConnected.getAndSet(true)) {
+					curClient.connect(destAddr, conn, outgoingConnect);
+				}
+				else {
+					requestBuf.limit(requestBuf.capacity());
 					requestBuf.position(0);
-					client.write(requestBuf, null, outgoingWrite);
+					conn.read(requestBuf, conn, incomingRead);
 				}
 			}
 			public void failed(Throwable ex, Void attachment) {
 				mainCtx.enqueueTaskToMainThread(() -> {
-					mainCtx.onServerConnectionFailure(ex);
+					mainCtx.onServerSetupFailure(ex, "IncomingAccept");
 				});
 			}
 		}
 
-		class OutgoingWrite implements CompletionHandler<Integer, Void> {
-			public void completed(Integer bytesWritten, Void attachment) {
+		class OutgoingConnect implements CompletionHandler<Void, AsynchronousSocketChannel> {
+			public void completed(Void param, AsynchronousSocketChannel conn) {
+				requestBuf.limit(requestBuf.capacity());
 				requestBuf.position(0);
-				conn.read(requestBuf, null, incomingRead);
-				responseBuf.position(0);
-				client.read(responseBuf, null, outgoingRead);
+				conn.read(requestBuf, conn, incomingRead);
 			}
-			public void failed(Throwable ex, Void attachment) {
+			public void failed(Throwable ex, AsynchronousSocketChannel conn) {
+				try { conn.close(); }
+				catch (Exception ignored) {}
 				mainCtx.enqueueTaskToMainThread(() -> {
-					mainCtx.onServerConnectionFailure(ex);
+					mainCtx.onServerSetupFailure(ex, "OutgoingConnect");
 				});
 			}
 		}
 
-		class OutgoingRead implements CompletionHandler<Integer, Void> {
-			public void completed(Integer bytesRead, Void attachment) {
-				responseBuf.position(0);
-				conn.write(responseBuf, null, incomingWrite);
+		class IncomingRead implements CompletionHandler<Integer, AsynchronousSocketChannel> {
+			public void completed(Integer bytesRead, AsynchronousSocketChannel conn) {
+				if (bytesRead > 0) {
+					requestBuf.position(0);
+					requestBuf.limit(bytesRead);
+					curClient.write(requestBuf, conn, outgoingWrite);
+				}
 			}
-			public void failed(Throwable ex, Void attachment) {
+			public void failed(Throwable ex, AsynchronousSocketChannel conn) {
+				try { conn.close(); }
+				catch (Exception ignored) {}
 				mainCtx.enqueueTaskToMainThread(() -> {
-					mainCtx.onServerConnectionFailure(ex);
+					mainCtx.onServerConnectionFailure(ex, "IncomingRead");
 				});
 			}
 		}
 
-		class IncomingWrite implements CompletionHandler<Integer, Void> {
-			public void completed(Integer bytesRead, Void attachment) {
+		class OutgoingWrite implements CompletionHandler<Integer, AsynchronousSocketChannel> {
+			public void completed(Integer bytesWritten, AsynchronousSocketChannel conn) {
+				requestBuf.limit(requestBuf.capacity());
+				requestBuf.position(0);
+				conn.read(requestBuf, conn, incomingRead);
+				responseBuf.limit(requestBuf.capacity());
 				responseBuf.position(0);
-				client.read(responseBuf, null, outgoingRead);
+				curClient.read(responseBuf, conn, outgoingRead);
 			}
-			public void failed(Throwable ex, Void attachment) {
+			public void failed(Throwable ex, AsynchronousSocketChannel conn) {
+				try { conn.close(); }
+				catch (Exception ignored) {}
 				mainCtx.enqueueTaskToMainThread(() -> {
-					mainCtx.onServerConnectionFailure(ex);
+					mainCtx.onServerConnectionFailure(ex, "OutgoingWrite");
+				});
+			}
+		}
+
+		class OutgoingRead implements CompletionHandler<Integer, AsynchronousSocketChannel> {
+			public void completed(Integer bytesRead, AsynchronousSocketChannel conn) {
+				if (bytesRead > 0) {
+					responseBuf.position(0);
+					responseBuf.limit(bytesRead);
+					conn.write(responseBuf, conn, incomingWrite);
+				}
+			}
+			public void failed(Throwable ex, AsynchronousSocketChannel conn) {
+				try { conn.close(); }
+				catch (Exception ignored) {}
+				mainCtx.enqueueTaskToMainThread(() -> {
+					mainCtx.onServerConnectionFailure(ex, "OutgoingRead");
+				});
+			}
+		}
+
+		class IncomingWrite implements CompletionHandler<Integer, AsynchronousSocketChannel> {
+			public void completed(Integer bytesRead, AsynchronousSocketChannel conn) {
+				responseBuf.position(0);
+				curClient.read(responseBuf, conn, outgoingRead);
+			}
+			public void failed(Throwable ex, AsynchronousSocketChannel conn) {
+				try { conn.close(); }
+				catch (Exception ignored) {}
+				mainCtx.enqueueTaskToMainThread(() -> {
+					mainCtx.onServerConnectionFailure(ex, "IncomingWrite");
 				});
 			}
 		}
@@ -101,15 +140,28 @@ public class Proxy {
 		this.destAddr = destAddr;
 		this.requestBuf = ByteBuffer.allocate(16 * 1024);
 		this.responseBuf = ByteBuffer.allocate(16 * 1024);
+		this.isConnected = new AtomicBoolean(false);
 	}
 
 	public int[] acceptFirstServerRequest(AsynchronousServerSocketChannel server) throws IOException {
-		this.client = AsynchronousSocketChannel.open().bind(outgoingAddr);
-		curFlow = new Flow();
-		server.accept(null, curFlow.incomingAccept);
+		this.curServer = server;
+		this.curClient = AsynchronousSocketChannel.open().bind(outgoingAddr);
+		this.curFlow = new Flow();
+		this.curServer.accept(null, curFlow.incomingAccept);
 		return new int[] {
-			((InetSocketAddress)server.getLocalAddress()).getPort(),
-			((InetSocketAddress)client.getLocalAddress()).getPort(),
+			((InetSocketAddress)curServer.getLocalAddress()).getPort(),
+			((InetSocketAddress)curClient.getLocalAddress()).getPort(),
 		};
+	}
+
+	public void close() throws IOException {
+		try {
+			if (curClient != null)
+				curClient.close();
+		}
+		finally {
+			if (curServer != null)
+				curServer.close();
+		}
 	}
 }
