@@ -204,6 +204,10 @@ public class MainActivity extends Activity implements View.OnClickListener, Comp
 		((TextView)findViewById(R.id.portView)).setText(str2);
 	}
 
+	public void setMainText(String str) {
+		((TextView)findViewById(R.id.mainTextView)).setText(str);
+	}
+
 	public void onServerSetupFailure(Throwable ex, String kind) {
 		((TextView)findViewById(R.id.mainTextView)).setText("Setup exception from " + kind + ": " + ex.toString());
 	}

@@ -4,7 +4,7 @@ import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
 import java.nio.channels.*;
-import java.util.concurrent.atomic.AtomicReference;
+import java.util.concurrent.ConcurrentLinkedQueue;
 
 public class Proxy {
 	static class InOutPair {
@@ -15,41 +15,30 @@ public class Proxy {
 			this.sIn = inSocket;
 			this.sOut = outSocket;
 		}
+	}
+	static class Transfer {
+		public InOutPair pair;
+		public ByteBuffer buf;
 
-		public void closeBoth() throws IOException {
-			try {
-				if (sIn != null)
-					sIn.close();
-			}
-			finally {
-				if (sOut != null)
-					sOut.close();
-			}
+		public Transfer(InOutPair pair, ByteBuffer buf) {
+			this.pair = pair;
+			this.buf = buf;
 		}
 
-		public void silentlyCloseBoth() {
-			try {
-				if (sIn != null)
-					sIn.close();
-			}
-			catch (Exception ignored) {}
-			try {
-				if (sOut != null)
-					sOut.close();
-			}
-			catch (Exception ignored) {}
+		public void releaseBuffer() {
+			BufferRecycler.release(this.buf);
+			this.buf = null;
 		}
 	}
+
+	static final int PACKET_SIZE = 16 * 1024;
 
 	final MainActivity mainCtx;
 	final InetSocketAddress incomingAddr;
 	final InetSocketAddress outgoingAddr;
 	final InetSocketAddress destAddr;
 	final AsynchronousServerSocketChannel server;
-
-	final ByteBuffer requestBuf;
-	final ByteBuffer responseBuf;
-	final AtomicReference<InOutPair> curSocketPair;
+	final ConcurrentLinkedQueue<InOutPair> activeSocketQueue;
 
 	final IncomingAccept  incomingAccept  = new IncomingAccept();
 	final OutgoingConnect outgoingConnect = new OutgoingConnect();
@@ -72,8 +61,9 @@ public class Proxy {
 			}
 
 			InOutPair socketPair = new InOutPair(inSocket, outSocket);
-			curSocketPair.set(socketPair);
+			activeSocketQueue.offer(socketPair);
 			outSocket.connect(destAddr, socketPair, outgoingConnect);
+			server.accept(null, incomingAccept);
 		}
 		public void failed(Throwable ex, Void attachment) {
 			mainCtx.enqueueTaskToMainThread(() -> {
@@ -84,80 +74,97 @@ public class Proxy {
 
 	class OutgoingConnect implements CompletionHandler<Void, InOutPair> {
 		public void completed(Void param, InOutPair pair) {
-			requestBuf.limit(requestBuf.capacity());
-			requestBuf.position(0);
-			pair.sIn.read(requestBuf, pair, incomingRead);
+			ByteBuffer requestBuf = BufferRecycler.acquire(PACKET_SIZE);
+			ByteBuffer responseBuf = BufferRecycler.acquire(PACKET_SIZE);
+			pair.sIn.read(requestBuf, new Transfer(pair, requestBuf), incomingRead);
+			pair.sOut.read(responseBuf, new Transfer(pair, responseBuf), outgoingRead);
 		}
 		public void failed(Throwable ex, InOutPair pair) {
-			pair.silentlyCloseBoth();
+			silentlyCloseSocketPair(pair);
 			mainCtx.enqueueTaskToMainThread(() -> {
 				mainCtx.onServerSetupFailure(ex, "OutgoingConnect");
 			});
 		}
 	}
 
-	class IncomingRead implements CompletionHandler<Integer, InOutPair> {
-		public void completed(Integer bytesRead, InOutPair pair) {
-			if (bytesRead > 0) {
-				requestBuf.position(0);
-				requestBuf.limit(bytesRead);
-				pair.sOut.write(requestBuf, pair, outgoingWrite);
+	class IncomingRead implements CompletionHandler<Integer, Transfer> {
+		public void completed(Integer bytesRead, Transfer t) {
+			if (bytesRead >= 0) {
+				Transfer nextTransfer = t;
+				if (bytesRead > 0) {
+					t.buf.position(0);
+					t.buf.limit(bytesRead);
+					t.pair.sOut.write(t.buf, t, outgoingWrite);
+					nextTransfer = new Transfer(t.pair, BufferRecycler.acquire(PACKET_SIZE));
+				}
+				t.pair.sIn.read(nextTransfer.buf, nextTransfer, incomingRead);
+			}
+			else {
+				BufferRecycler.release(t.buf);
+				t.buf = null;
 			}
 		}
-		public void failed(Throwable ex, InOutPair pair) {
-			pair.silentlyCloseBoth();
+		public void failed(Throwable ex, Transfer t) {
+			endTransfer(t);
+			/*
 			mainCtx.enqueueTaskToMainThread(() -> {
 				mainCtx.onServerConnectionFailure(ex, "IncomingRead");
 			});
+			*/
 		}
 	}
 
-	class OutgoingWrite implements CompletionHandler<Integer, InOutPair> {
-		public void completed(Integer bytesWritten, InOutPair pair) {
-			requestBuf.limit(requestBuf.capacity());
-			requestBuf.position(0);
-			pair.sIn.read(requestBuf, pair, incomingRead);
-			responseBuf.limit(requestBuf.capacity());
-			responseBuf.position(0);
-			pair.sOut.read(responseBuf, pair, outgoingRead);
+	class OutgoingWrite implements CompletionHandler<Integer, Transfer> {
+		public void completed(Integer bytesWritten, Transfer t) {
+			t.releaseBuffer();
 		}
-		public void failed(Throwable ex, InOutPair pair) {
-			pair.silentlyCloseBoth();
+		public void failed(Throwable ex, Transfer t) {
+			endTransfer(t);
+			/*
 			mainCtx.enqueueTaskToMainThread(() -> {
 				mainCtx.onServerConnectionFailure(ex, "OutgoingWrite");
 			});
+			*/
 		}
 	}
 
-	class OutgoingRead implements CompletionHandler<Integer, InOutPair> {
-		public void completed(Integer bytesRead, InOutPair pair) {
-			if (bytesRead > 0) {
-				responseBuf.position(0);
-				responseBuf.limit(bytesRead);
-				pair.sIn.write(responseBuf, pair, incomingWrite);
+	class OutgoingRead implements CompletionHandler<Integer, Transfer> {
+		public void completed(Integer bytesRead, Transfer t) {
+			if (bytesRead >= 0) {
+				Transfer nextTransfer = t;
+				if (bytesRead > 0) {
+					t.buf.position(0);
+					t.buf.limit(bytesRead);
+					t.pair.sIn.write(t.buf, t, incomingWrite);
+					nextTransfer = new Transfer(t.pair, BufferRecycler.acquire(PACKET_SIZE));
+				}
+				t.pair.sOut.read(nextTransfer.buf, nextTransfer, outgoingRead);
 			}
 			else {
-				pair.silentlyCloseBoth();
+				endTransfer(t);
 			}
 		}
-		public void failed(Throwable ex, InOutPair pair) {
-			pair.silentlyCloseBoth();
+		public void failed(Throwable ex, Transfer t) {
+			endTransfer(t);
+			/*
 			mainCtx.enqueueTaskToMainThread(() -> {
 				mainCtx.onServerConnectionFailure(ex, "OutgoingRead");
 			});
+			*/
 		}
 	}
 
-	class IncomingWrite implements CompletionHandler<Integer, InOutPair> {
-		public void completed(Integer bytesRead, InOutPair pair) {
-			responseBuf.position(0);
-			pair.sOut.read(responseBuf, pair, outgoingRead);
+	class IncomingWrite implements CompletionHandler<Integer, Transfer> {
+		public void completed(Integer bytesRead, Transfer t) {
+			t.releaseBuffer();
 		}
-		public void failed(Throwable ex, InOutPair pair) {
-			pair.silentlyCloseBoth();
+		public void failed(Throwable ex, Transfer t) {
+			endTransfer(t);
+			/*
 			mainCtx.enqueueTaskToMainThread(() -> {
 				mainCtx.onServerConnectionFailure(ex, "IncomingWrite");
 			});
+			*/
 		}
 	}
 
@@ -173,9 +180,32 @@ public class Proxy {
 		this.outgoingAddr = outgoingAddr;
 		this.destAddr = destAddr;
 		this.server = server;
-		this.requestBuf = ByteBuffer.allocate(16 * 1024);
-		this.responseBuf = ByteBuffer.allocate(16 * 1024);
-		this.curSocketPair = new AtomicReference<InOutPair>(null);
+		this.activeSocketQueue = new ConcurrentLinkedQueue<InOutPair>();
+	}
+
+	public void silentlyCloseSocketPair(InOutPair socketPair) {
+		if (socketPair == null)
+			return;
+
+		activeSocketQueue.remove(socketPair);
+
+		try {
+			if (socketPair.sIn != null)
+				socketPair.sIn.close();
+		}
+		catch (Exception ignored) {}
+		try {
+			if (socketPair.sOut != null)
+				socketPair.sOut.close();
+		}
+		catch (Exception ignored) {}
+	}
+
+	public void endTransfer(Transfer t) {
+		ByteBuffer b = t.buf;
+		t.buf = null;
+		BufferRecycler.release(b);
+		silentlyCloseSocketPair(t.pair);
 	}
 
 	public int acceptFirstServerRequest() throws IOException {
@@ -191,9 +221,26 @@ public class Proxy {
 				server.close();
 		}
 		finally {
-			InOutPair pair = curSocketPair.get();
-			if (pair != null)
-				pair.closeBoth();
+			IOException lastEx = null;
+			InOutPair socketPair = null;
+			while ((socketPair = activeSocketQueue.poll()) != null) {
+				try {
+					if (socketPair.sIn != null)
+						socketPair.sIn.close();
+				}
+				catch (IOException ex) {
+					lastEx = ex;
+				}
+				try {
+					if (socketPair.sOut != null)
+						socketPair.sOut.close();
+				}
+				catch (IOException ex) {
+					lastEx = ex;
+				}
+			}
+			if (lastEx != null)
+				throw lastEx;
 		}
 	}
 }
